@@ -1111,7 +1111,13 @@ const narr = {
     fill: document.getElementById('narrFill'),
     mode: 'off',            // 'off' | 'on' (play per slide) | 'auto' (play + advance)
     timer: null,
-    src(i) { return 'audio/s' + String(i + 1).padStart(2, '0') + '.mp3'; },
+    base: 'audio/',         // folder holding sNN.mp3; falls back to the page's own folder
+    src(i) { return this.base + 's' + String(i + 1).padStart(2, '0') + '.mp3'; },
+    async findBase() {
+        for (const b of ['audio/', '']) {
+            try { const r = await fetch(b + 's01.mp3', { method: 'HEAD' }); if (r.ok) { this.base = b; return; } } catch (e) {}
+        }
+    },
     resumeAt: -1,           // slide whose narration was paused mid-way (-1 = none)
     play(i, resume) {
         clearTimeout(this.timer);
@@ -1121,7 +1127,7 @@ const narr = {
         }
         this.resumeAt = -1;
         const p = this.audio.play();
-        if (p && p.catch) p.catch(() => this.set('off'));
+        if (p && p.catch) p.catch(e => { if (e && e.name === 'NotAllowedError') this.set('off'); });
     },
     stop() {
         const waitingForNext = !!this.timer && this.audio.ended;
@@ -1151,6 +1157,13 @@ const narr = {
         else if (i !== this.resumeAt) { this.resumeAt = -1; this.skipOnResume = false; this.fill.style.width = '0'; }
     },
     init() {
+        this.ready = this.findBase();
+        this.audio.addEventListener('error', () => {
+            // file missing in this folder: try the other location once
+            const alt = this.base === 'audio/' ? '' : 'audio/';
+            if (this.mode !== 'off' && !this.retried) { this.retried = true; this.base = alt; this.play(deck.i); }
+        });
+        this.audio.addEventListener('playing', () => { this.retried = false; });
         this.btn.onclick = () => this.set(this.mode === 'on' ? 'off' : 'on');
         this.autoBtn.onclick = () => this.set(this.mode === 'auto' ? 'off' : 'auto');
         this.audio.addEventListener('timeupdate', () => {
